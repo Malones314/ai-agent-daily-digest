@@ -49,10 +49,10 @@ git push -u origin main
 | Secret | 填什么 |
 |---|---|
 | `DEEPSEEK_API_KEY` | 你的 DeepSeek key |
-| `MAIL_USERNAME` | 你的 **Brevo 登录邮箱**（不是收件地址） |
-| `MAIL_APP_PASSWORD` | 上一步拿到的 **Brevo SMTP key** |
-| `MAIL_FROM` | 已验证的发件地址：`你的邮箱@example.com` |
-| `MAIL_TO` | 收件地址：`你的邮箱@example.com` |
+| `MAIL_USERNAME` | Brevo **SMTP & API → SMTP 页面上的 SMTP login**（形如 `xxx@smtp-brevo.com`，也可能显示为登录邮箱，以页面为准） |
+| `MAIL_APP_PASSWORD` | 上一步生成的 **SMTP key**（`xsmtpsib-` 开头，只显示一次，务必复制） |
+| `MAIL_FROM` | 已验证的发件地址：你的邮箱@example.com |
+| `MAIL_TO` | 收件地址：你的邮箱@example.com |
 
 再切到同页的 **Variables** 标签，加两个：
 
