@@ -1,0 +1,69 @@
+name: AI / Agent 早报
+
+on:
+  schedule:
+    # GitHub 的 cron 用 UTC。北京时间 07:00 = 前一天 UTC 23:00
+    - cron: "0 23 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "只生成不发信（跑完可在 Artifacts 下载预览）"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write # 需要把 .state/seen.json 写回仓库（跨天去重 + 保持仓库活跃）
+
+concurrency:
+  group: ai-digest
+  cancel-in-progress: false
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # 纯标准库，无需 pip install
+      - name: 生成并发送早报
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
+          MAIL_APP_PASSWORD: ${{ secrets.MAIL_APP_PASSWORD }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 发信服务商（仓库 Variables；留空则用代码里的 Gmail 默认值）
+          #   Brevo ：SMTP_HOST=smtp-relay.brevo.com  SMTP_PORT=587
+          #   Resend：SMTP_HOST=smtp.resend.com       SMTP_PORT=465
+          SMTP_HOST: ${{ vars.SMTP_HOST }}
+          SMTP_PORT: ${{ vars.SMTP_PORT }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+        run: python digest.py
+
+      - name: 上传预览（仅 dry run）
+        if: ${{ inputs.dry_run }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-preview
+          path: |
+            preview.html
+            preview.txt
+
+      - name: 写回去重状态
+        if: ${{ !inputs.dry_run }}
+        run: |
+          git config user.name "digest-bot"
+          git config user.email "digest-bot@users.noreply.github.com"
+          git add -A .state
+          if git diff --quiet --cached; then
+            echo "状态无变化，跳过提交"
+          else
+            git commit -m "chore: update digest state [skip ci]"
+            git push
+          fi

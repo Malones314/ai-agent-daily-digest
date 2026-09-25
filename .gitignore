@@ -1,0 +1,6 @@
+# 本来就是被 git 追踪的空状态目录占位说明：.state/seen.json 是跨天去重的记忆，要随仓库提交
+# 只忽略本地调试产物
+preview.html
+preview.txt
+__pycache__/
+*.pyc
