@@ -39,7 +39,7 @@ git push -u origin main
 **为什么不用 Gmail**：新注册的 Gmail 账号第一次发信就来自数据中心 IP（Actions 跑在 Azure 上），容易触发谷歌风控，报 `534-5.7.9 Please log in via your web browser`。Brevo 是专业发信服务，免费额度 300 封/天，专门干这个。
 
 1. 注册 [brevo.com](https://www.brevo.com)（免费计划）
-2. **Senders, Domains & Dedicated IPs → Senders → Add a sender**，填 `zrchen314@gmail.com`，去你的 Gmail 收确认信点一下完成验证（这是验证"发件地址"，**不需要新建任何邮箱**）
+2. **Senders, Domains & Dedicated IPs → Senders → Add a sender**，填 `你的邮箱@example.com`，去你的 Gmail 收确认信点一下完成验证（这是验证"发件地址"，**不需要新建任何邮箱**）
 3. **SMTP & API → SMTP**，拿到 SMTP key（形如 `xsmtpsib-...`）
 
 ### 3. 配置 Secrets
@@ -51,8 +51,8 @@ git push -u origin main
 | `DEEPSEEK_API_KEY` | 你的 DeepSeek key |
 | `MAIL_USERNAME` | 你的 **Brevo 登录邮箱**（不是收件地址） |
 | `MAIL_APP_PASSWORD` | 上一步拿到的 **Brevo SMTP key** |
-| `MAIL_FROM` | 已验证的发件地址：`zrchen314@gmail.com` |
-| `MAIL_TO` | 收件地址：`zrchen314@gmail.com` |
+| `MAIL_FROM` | 已验证的发件地址：`你的邮箱@example.com` |
+| `MAIL_TO` | 收件地址：`你的邮箱@example.com` |
 
 再切到同页的 **Variables** 标签，加两个：
 

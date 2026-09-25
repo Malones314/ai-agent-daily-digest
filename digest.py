@@ -14,7 +14,7 @@
   DEEPSEEK_API_KEY   必填（生成中文摘要）
   MAIL_USERNAME      SMTP 登录用户名（省略则只生成不发信）
   MAIL_APP_PASSWORD  SMTP 登录密码/密钥
-  MAIL_TO            收件地址（默认 zrchen314@gmail.com）
+  MAIL_TO            收件地址（必填）
   MAIL_FROM          发件人地址（默认同 MAIL_USERNAME）；Brevo 场景下填已验证的发件地址
   SMTP_HOST          默认 smtp.gmail.com；Brevo=smtp-relay.brevo.com，Resend=smtp.resend.com
   SMTP_PORT          默认 465（SSL）；587 走 STARTTLS
@@ -46,7 +46,7 @@ STATE_FILE = ROOT / ".state" / "seen.json"
 SEEN_DAYS = 7
 PER_SECTION = 10
 DRY_RUN = os.environ.get("DRY_RUN", "").strip().lower() in {"1", "true", "yes"}
-MAIL_TO = os.environ.get("MAIL_TO", "zrchen314@gmail.com").strip()
+MAIL_TO = os.environ.get("MAIL_TO", "").strip()
 DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-flash").strip()
 DEEPSEEK_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/") + "/chat/completions"
 
@@ -620,6 +620,9 @@ def send_mail(subject: str, html_body: str, text_body: str) -> bool:
     password = os.environ.get("MAIL_APP_PASSWORD", "").strip()
     if not (user and password):
         log("未配置 MAIL_USERNAME / MAIL_APP_PASSWORD，跳过发信")
+        return False
+    if not MAIL_TO:
+        log("未配置 MAIL_TO（收件地址），跳过发信")
         return False
     host = os.environ.get("SMTP_HOST", "smtp.gmail.com").strip()
     port = int(os.environ.get("SMTP_PORT", "465") or "465")

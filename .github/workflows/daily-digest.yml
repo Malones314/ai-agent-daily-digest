@@ -35,8 +35,9 @@ jobs:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
           MAIL_APP_PASSWORD: ${{ secrets.MAIL_APP_PASSWORD }}
-          MAIL_TO: ${{ secrets.MAIL_TO }}
-          MAIL_FROM: ${{ secrets.MAIL_FROM }}
+          # 下面几项填 Secret 或 Variable 都行（Secret 优先）
+          MAIL_TO: ${{ secrets.MAIL_TO || vars.MAIL_TO }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM || vars.MAIL_FROM }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # 发信服务商（仓库 Variables；留空则用代码里的 Gmail 默认值）
           #   Brevo ：SMTP_HOST=smtp-relay.brevo.com  SMTP_PORT=587
