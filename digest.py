@@ -735,19 +735,28 @@ def main() -> int:
     html_body = render_html(date_label, data)
     text_body = render_text(date_label, data)
 
+    send_ok = True
     if DRY_RUN:
         (ROOT / "preview.html").write_text(html_body, encoding="utf-8")
         (ROOT / "preview.txt").write_text(text_body, encoding="utf-8")
         log("DRY_RUN：已写出 preview.html / preview.txt")
     else:
         counts = " / ".join(f"{t}{len(data[k])}" for k, _e, t in SECTIONS)
-        send_mail(f"AI / Agent 早报 · {date_label}（{counts}）", html_body, text_body)
+        send_ok = send_mail(f"AI / Agent 早报 · {date_label}（{counts}）", html_body, text_body)
+        if not send_ok:
+            log("⚠ 发信失败：请检查 MAIL_USERNAME（应为 Brevo 的 SMTP login）、"
+                "MAIL_APP_PASSWORD（SMTP key）、SMTP_HOST/SMTP_PORT")
 
-    save_seen([it["url"] for k, _e, _t in SECTIONS for it in data.get(k, [])], raw_state)
+    if send_ok:
+        save_seen([it["url"] for k, _e, _t in SECTIONS for it in data.get(k, [])], raw_state)
+    else:
+        log("发信失败：本次不计入去重状态，明天仍会重新收录这些内容")
     missing = [k for k, _e, _t in SECTIONS if len(data.get(k, [])) < PER_SECTION]
     if missing:
         log(f"⚠ 以下板块不足 {PER_SECTION} 条: {missing}")
         return 1
+    if not send_ok:
+        return 3
     return 0
 
 
