@@ -242,6 +242,7 @@ def collect_hn_news() -> list[dict]:
                     "source": f"Hacker News ({h.get('points')} 赞)",
                     "published": dt.datetime.fromtimestamp(h.get("created_at_i") or 0, dt.timezone.utc),
                     "text": strip_html(h.get("story_text") or "")[:300],
+                    "hn_tag": label,
                 })
         except Exception as exc:  # noqa: BLE001
             log(f"  HN/{label}: 失败 ({type(exc).__name__}: {exc})")
@@ -278,8 +279,13 @@ def _keyword_hit(blob: str, words: tuple[str, ...]) -> bool:
 
 def filter_news(items: list[dict], kind: str) -> list[dict]:
     words = AGENT_WORDS if kind == "agent" else AI_WORDS
+    # HN 是按主题查询来的，查询本身已经限定了话题，直接按其标签归类
+    tags = {"agent"} if kind == "agent" else {"AI", "LLM", "agent", "MCP"}
     picked = []
     for it in items:
+        if it.get("hn_tag") in tags:
+            picked.append(it)
+            continue
         blob = f"{it['title']} {it.get('text','')}".lower()
         if _keyword_hit(blob, words):
             picked.append(it)
@@ -382,7 +388,7 @@ SYSTEM_PROMPTS = {
 }
 
 
-def llm_json(api_key: str, system: str, user: str, *, max_tokens: int = 4000) -> dict | None:
+def llm_json(api_key: str, system: str, user: str, *, max_tokens: int = 8000) -> dict | None:
     payload = {
         "model": DEEPSEEK_MODEL,
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
@@ -390,37 +396,55 @@ def llm_json(api_key: str, system: str, user: str, *, max_tokens: int = 4000) ->
         "max_tokens": max_tokens,
         "response_format": {"type": "json_object"},
     }
-    req = urllib.request.Request(
-        DEEPSEEK_URL,
-        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=180) as resp:
-            body = json.loads(resp.read().decode("utf-8", "replace"))
-    except urllib.error.HTTPError as exc:
-        log(f"  LLM HTTP {exc.code}: {exc.read()[:300]!r}")
-        return None
-    except Exception as exc:  # noqa: BLE001
-        log(f"  LLM 调用失败: {type(exc).__name__}: {exc}")
-        return None
-    try:
-        content = body["choices"][0]["message"]["content"]
-    except Exception:  # noqa: BLE001
-        log(f"  LLM 返回异常: {str(body)[:300]}")
-        return None
-    content = re.sub(r"^```(?:json)?|```$", "", content.strip(), flags=re.M).strip()
-    try:
-        return json.loads(content)
-    except Exception:  # noqa: BLE001
-        m = re.search(r"\{.*\}", content, flags=re.S)
-        if m:
+    for attempt in (1, 2):
+        req = urllib.request.Request(
+            DEEPSEEK_URL,
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=240) as resp:
+                body = json.loads(resp.read().decode("utf-8", "replace"))
+        except urllib.error.HTTPError as exc:
+            log(f"  LLM HTTP {exc.code}: {exc.read()[:300]!r}")
+            return None
+        except Exception as exc:  # noqa: BLE001
+            log(f"  LLM 调用失败: {type(exc).__name__}: {exc}")
+            return None
+
+        try:
+            choice = body["choices"][0]
+            msg = choice.get("message") or {}
+        except Exception:  # noqa: BLE001
+            log(f"  LLM 返回异常: {str(body)[:300]}")
+            return None
+
+        content = (msg.get("content") or "").strip()
+        if not content:
+            # 推理型模型可能把内容写进 reasoning_content，或整段被 token 预算吃掉
+            reasoning = (msg.get("reasoning_content") or "").strip()
+            log(
+                f"  content 为空 (finish_reason={choice.get('finish_reason')}, "
+                f"usage={body.get('usage')}, reasoning_content={len(reasoning)} 字符) —— 第 {attempt} 次"
+            )
+            if len(reasoning) > 40:
+                content = reasoning
+        if content:
+            content = re.sub(r"^```(?:json)?|```$", "", content.strip(), flags=re.M).strip()
             try:
-                return json.loads(m.group(0))
+                return json.loads(content)
             except Exception:  # noqa: BLE001
-                pass
-    log(f"  LLM 输出无法解析为 JSON: {content[:200]}")
+                m = re.search(r"\{.*\}", content, flags=re.S)
+                if m:
+                    try:
+                        return json.loads(m.group(0))
+                    except Exception:  # noqa: BLE001
+                        pass
+                log(f"  LLM 输出无法解析为 JSON（{len(content)} 字符）: {content[:200]}")
+        if attempt == 1:
+            log("  重试一次...")
+            time.sleep(3)
     return None
 
 
