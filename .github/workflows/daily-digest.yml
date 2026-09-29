@@ -2,9 +2,9 @@ name: AI / Agent 早报
 
 on:
   schedule:
-    # GitHub 的 cron 用 UTC。北京时间 06:52 = 前一天 UTC 22:52
+    # GitHub 的 cron 用 UTC。北京时间 06:32 = 前一天 UTC 22:32
     # 刻意避开整点：GitHub 免费版在 :00 会排队，整点的任务容易晚十几分钟到半小时
-    - cron: "52 22 * * *"
+    - cron: "32 22 * * *"
   workflow_dispatch:
     inputs:
       dry_run:
