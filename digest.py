@@ -8,7 +8,7 @@
   4) GitHub 热门 Agent 项目（10 个仓库）
 
 数据源全部免费：RSS/Atom 订阅源 + Hacker News Algolia API + GitHub 公开 Search API。
-摘要由 DeepSeek chat API 生成；任何一步失败都有兜底，保证每天照发 40 条。
+摘要由 DeepSeek chat API 生成。候选不足时发送已有条目并报告缺额。
 
 环境变量：
   DEEPSEEK_API_KEY   必填（生成中文摘要）
@@ -223,10 +223,15 @@ HN_QUERIES = [
     ("MCP", "https://hn.algolia.com/api/v1/search_by_date?tags=story&hitsPerPage=50&numericFilters=points%3E20&query=MCP"),
 ]
 
+HN_AGENT_BACKFILL = [
+    ("agent", "https://hn.algolia.com/api/v1/search_by_date?tags=story&hitsPerPage=80&numericFilters=points%3E2&query=AI%20agent"),
+    ("MCP", "https://hn.algolia.com/api/v1/search_by_date?tags=story&hitsPerPage=50&numericFilters=points%3E2&query=MCP"),
+]
 
-def collect_hn_news() -> list[dict]:
+
+def collect_hn_news(queries: list[tuple[str, str]] = HN_QUERIES) -> list[dict]:
     items: list[dict] = []
-    for label, url in HN_QUERIES:
+    for label, url in queries:
         try:
             data = get_json(url)
             hits = data.get("hits") or []
@@ -280,7 +285,7 @@ def _keyword_hit(blob: str, words: tuple[str, ...]) -> bool:
 def filter_news(items: list[dict], kind: str) -> list[dict]:
     words = AGENT_WORDS if kind == "agent" else AI_WORDS
     # HN 是按主题查询来的，查询本身已经限定了话题，直接按其标签归类
-    tags = {"agent"} if kind == "agent" else {"AI", "LLM", "agent", "MCP"}
+    tags = {"agent", "MCP"} if kind == "agent" else {"AI", "LLM", "agent", "MCP"}
     picked = []
     for it in items:
         if it.get("hn_tag") in tags:
@@ -290,6 +295,22 @@ def filter_news(items: list[dict], kind: str) -> list[dict]:
         if _keyword_hit(blob, words):
             picked.append(it)
     return picked
+
+
+def news_pools(items: list[dict], seen: set[str]) -> tuple[list[dict], list[dict]]:
+    news = dedupe_news(items)
+    agent = filter_news(news, "agent")
+    if len({c["url"] for c in agent} - seen) < PER_SECTION:
+        log("未推送的 Agent 新闻不足，补查近期 AI Agent 和 MCP 讨论")
+        news = dedupe_news(items + collect_hn_news(HN_AGENT_BACKFILL))
+        agent = filter_news(news, "agent")
+
+    ai = filter_news(news, "ai")
+    ai_urls = {c["url"] for c in ai}
+    agent_urls = dict.fromkeys(c["url"] for c in agent if c["url"] not in seen)
+    # 优先预留 Agent 独有的新闻，仅在需要时从两板块共有的候选中留足名额。
+    reserved = set(sorted(agent_urls, key=lambda url: url in ai_urls)[:PER_SECTION])
+    return [c for c in ai if c["url"] not in reserved], agent
 
 
 # ---------------------------------------------------------------- 采集：GitHub
@@ -535,7 +556,7 @@ def sanitize_news(items: list[dict], pool: list[dict]) -> list[dict]:
     out = []
     for it in items or []:
         url = (it.get("url") or "").strip()
-        c = by_url.get(url)
+        c = by_url.pop(url, None)
         if not c:
             continue
         out.append({
@@ -556,6 +577,8 @@ def sanitize_repos(items: list[dict], pool: list[dict]) -> list[dict]:
         c = by_url.get(url) or by_name.get((it.get("name") or "").strip().lower())
         if not c:
             continue
+        del by_url[c["url"]]
+        del by_name[c["name"].lower()]
         out.append({
             "name": c["name"],
             "url": c["url"],
@@ -697,10 +720,7 @@ def main() -> int:
     log(f"已推链接记忆: {len(seen)} 条")
 
     log("采集订阅源...")
-    news_all = dedupe_news(collect_feed_news() + collect_hn_news())
-    log(f"去重后新闻候选: {len(news_all)} 条")
-    news_ai_pool = filter_news(news_all, "ai")
-    news_agent_pool = filter_news(news_all, "agent")
+    news_ai_pool, news_agent_pool = news_pools(collect_feed_news() + collect_hn_news(), seen)
     log(f"AI 候选 {len(news_ai_pool)} / Agent 候选 {len(news_agent_pool)}")
 
     log("采集 GitHub 项目...")
@@ -735,28 +755,26 @@ def main() -> int:
     html_body = render_html(date_label, data)
     text_body = render_text(date_label, data)
 
-    send_ok = True
     if DRY_RUN:
         (ROOT / "preview.html").write_text(html_body, encoding="utf-8")
         (ROOT / "preview.txt").write_text(text_body, encoding="utf-8")
         log("DRY_RUN：已写出 preview.html / preview.txt")
     else:
         counts = " / ".join(f"{t}{len(data[k])}" for k, _e, t in SECTIONS)
-        send_ok = send_mail(f"AI / Agent 早报 · {date_label}（{counts}）", html_body, text_body)
-        if not send_ok:
+        if not send_mail(f"AI / Agent 早报 · {date_label}（{counts}）", html_body, text_body):
             log("⚠ 发信失败：请检查 MAIL_USERNAME（应为 Brevo 的 SMTP login）、"
                 "MAIL_APP_PASSWORD（SMTP key）、SMTP_HOST/SMTP_PORT")
-
-    if send_ok:
+            return 3
         save_seen([it["url"] for k, _e, _t in SECTIONS for it in data.get(k, [])], raw_state)
-    else:
-        log("发信失败：本次不计入去重状态，明天仍会重新收录这些内容")
+
+    # 预览已生成或邮件已发送且状态已落盘。条数告警不应阻止后续归档。
+    if output := os.environ.get("GITHUB_OUTPUT"):
+        with open(output, "a", encoding="utf-8") as f:
+            print("digest_ready=true", file=f)
     missing = [k for k, _e, _t in SECTIONS if len(data.get(k, [])) < PER_SECTION]
     if missing:
         log(f"⚠ 以下板块不足 {PER_SECTION} 条: {missing}")
         return 1
-    if not send_ok:
-        return 3
     return 0
 
 

@@ -32,6 +32,7 @@ jobs:
 
       # 纯标准库，无需 pip install
       - name: 生成并发送早报
+        id: digest
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
@@ -49,7 +50,7 @@ jobs:
         run: python digest.py
 
       - name: 上传预览（仅 dry run）
-        if: ${{ inputs.dry_run }}
+        if: ${{ !cancelled() && inputs.dry_run && steps.digest.outputs.digest_ready == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: digest-preview
@@ -58,7 +59,7 @@ jobs:
             preview.txt
 
       - name: 写回去重状态
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !cancelled() && !inputs.dry_run && steps.digest.outputs.digest_ready == 'true' }}
         run: |
           git config user.name "digest-bot"
           git config user.email "digest-bot@users.noreply.github.com"
